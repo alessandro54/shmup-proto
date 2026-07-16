@@ -92,6 +92,9 @@ export const TUNING = {
   // 0.6 => ring speeds 380, 228, 137, ... Lower = tighter nesting.
   SHARD_RING_SPEED_RATIO: 0.6,
 
+  // --- Waves ---
+  WAVE_TRANSITION_S: 1.1, // pause between cleared wave and the next (debris swept)
+
   // --- Enemies ---
   // Enemies are spawned by WAVES (see waves.ts) and PERSIST until killed. They
   // move within the top zone and stop at ENEMY_FLOOR_FRAC of the way down it
@@ -111,6 +114,19 @@ export const TUNING = {
   ENEMY_BULLET_SPEED: 340, // px/s, aimed at the player at fire time
   STATIC_FIRE_INTERVAL: 1.6, // seconds between static-enemy shots
 
+  // --- Boss ---
+  BOSS_RADIUS: 120, // massive hitbox
+  BOSS_HP: 140, // massive HP
+  BOSS_POINTS: 20, // huge star on death
+  BOSS_SWAY_AMP: 240, // horizontal sway amplitude while attacking (px)
+  BOSS_SWAY_FREQ: 0.9, // sway frequency (rad/s)
+  BOSS_TOP_Y: 180, // resting height while attacking
+  BOSS_FIRE_INTERVAL: 0.7, // seconds between boss volleys
+  BOSS_CYCLE: 6, // full attack+dash cycle length (s); dash is the last second
+  BOSS_DASH_DURATION: 1, // seconds the dash lasts (dips into the player zone)
+  BOSS_DASH_DEPTH: DESIGN_HEIGHT - 260, // lowest y the dash reaches
+  BOSS_BULLET_GRAVITY: 900, // px/s² downward accel on gravity-dropper bullets
+
   // --- Colors ---
   COLOR_PLAYER: 0xdddddd,
   COLOR_PLAYER_DEAD: 0xff0000,
@@ -128,6 +144,7 @@ export const TUNING = {
   COLOR_ENEMY_SPLITTER: 0xe67e22,
   COLOR_ENEMY_ORBITER: 0x1abc9c,
   COLOR_ENEMY_SHIELD: 0x7f8c8d, // steel grey
+  COLOR_ENEMY_BOSS: 0xc0392b, // boss body
   COLOR_HOMING: 0xff66cc, // homing projectile
   COLOR_SPLIT: 0x66ffcc, // split (fan) projectile
   COLOR_UI_ON: 0xff66cc, // selected weapon button

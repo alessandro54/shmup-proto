@@ -14,7 +14,7 @@ export interface Spawn {
 export type Wave = Spawn[]
 export type Stage = Wave[]
 
-const { FALLER, STATIC, SHIELD, ORBITER, DRIFTER } = ENEMY_TYPES
+const { FALLER, STATIC, SHIELD, ORBITER, DRIFTER, BOSS } = ENEMY_TYPES
 
 // Handy anchors.
 const TOP = 60 // spawn y near the top edge
@@ -55,6 +55,8 @@ export const STAGE_1: Stage = [
     { type: SHIELD, x: DESIGN_WIDTH * 0.7, y: TOP + 130 }, // bottom-right
     { type: ORBITER, x: DESIGN_WIDTH * 0.5, y: TUNING.ACTIVE_ZONE_Y * 0.55 },
   ],
+  // Wave 5 — BOSS finale.
+  [{ type: BOSS, x: DESIGN_WIDTH * 0.5, y: TUNING.BOSS_TOP_Y }],
 ]
 
 export const STAGES: Stage[] = [STAGE_1]

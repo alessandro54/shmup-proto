@@ -28,6 +28,18 @@ export interface Star extends Body {
   value: number
 }
 
+// An enemy bullet. accelY lets some bullets accelerate downward (gravity drop).
+export interface Bullet extends Body {
+  accelY: number
+}
+
+// Context handed to an enemy's per-frame `act` (bosses use it to fire + move).
+export interface ActContext {
+  scene: Phaser.Scene
+  playerPos: Phaser.Math.Vector2
+  fire: (x: number, y: number, vx: number, vy: number, accelY: number) => void
+}
+
 // An expanding, fading ring flash left behind when a shot detonates.
 export interface Explosion {
   age: number // seconds since detonation
@@ -57,7 +69,11 @@ export interface EnemyType {
   points: number // score awarded on kill
   fireInterval?: number // seconds between shots; omitted = enemy never fires
   invincible?: boolean // absorbs shots, never dies, no debris (a shield)
+  boss?: boolean // exempt from the top-zone clamp; contact with player kills
   move: (e: Enemy, dt: number) => void
+  // Optional richer behavior (movement + firing) — used by the boss. Runs in
+  // place of `move` when present.
+  act?: (e: Enemy, dt: number, ctx: ActContext) => void
   // Optional death effect (e.g. splitter spawning children). `spawn` lets the
   // effect create more enemies without knowing about the scene/list wiring.
   onDeath?: (e: Enemy, spawn: (type: EnemyType, x: number, y: number) => void) => void

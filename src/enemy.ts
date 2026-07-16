@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
 import { DESIGN_WIDTH, TUNING } from './config'
-import type { Body, Enemy, EnemyType, Projectile } from './types'
+import { DESIGN_HEIGHT } from './config'
+import type { Body, Bullet, Enemy, EnemyType, Projectile, ActContext } from './types'
 import { spawnBody, integrate, overlaps, fullyOffScreen } from './physics'
 
 // ============================================================================
@@ -116,7 +117,66 @@ const SHIELD: EnemyType = {
   move: () => {},
 }
 
-export const ENEMY_TYPES = { STATIC, FALLER, DRIFTER, WEAVER, SPLITTER, ORBITER, SHIELD }
+// BOSS: massive hitbox + HP. Attacks with varied bullet patterns, then DASHES
+// down into the player's zone for a second (blocking shots, killing on contact)
+// before retreating. Not clamped to the top zone. Drops a huge star.
+const BOSS: EnemyType = {
+  key: 'boss',
+  radius: TUNING.BOSS_RADIUS,
+  color: TUNING.COLOR_ENEMY_BOSS,
+  hp: TUNING.BOSS_HP,
+  speed: 0,
+  points: TUNING.BOSS_POINTS,
+  boss: true,
+  move: () => {},
+  act: (e, dt, ctx) => {
+    const cx = DESIGN_WIDTH / 2
+    // Time within the current attack→dash cycle. The dash is the last second.
+    const phase = e.age % TUNING.BOSS_CYCLE
+    const attackTime = TUNING.BOSS_CYCLE - TUNING.BOSS_DASH_DURATION
+
+    if (phase < attackTime) {
+      // ATTACK: sway across the top and fire volleys.
+      e.pos.x = cx + Math.sin(e.age * TUNING.BOSS_SWAY_FREQ) * TUNING.BOSS_SWAY_AMP
+      e.pos.y = TUNING.BOSS_TOP_Y
+      e.fireTimer += dt
+      if (e.fireTimer >= TUNING.BOSS_FIRE_INTERVAL) {
+        e.fireTimer = 0
+        bossVolley(e, ctx)
+      }
+    } else {
+      // DASH: drop straight DOWN from where it is (no player tracking, so it's
+      // dodgeable) deep into the zone, then rise back up. x stays put.
+      const t = (phase - attackTime) / TUNING.BOSS_DASH_DURATION // 0..1
+      const tri = 1 - Math.abs(t * 2 - 1) // 0→1→0 (down then up)
+      e.pos.y = Phaser.Math.Linear(TUNING.BOSS_TOP_Y, TUNING.BOSS_DASH_DEPTH, tri)
+    }
+  },
+}
+
+// One boss volley — cycles through three different bullet behaviors.
+function bossVolley(e: Enemy, ctx: ActContext) {
+  const pattern = Math.floor(e.age / TUNING.BOSS_FIRE_INTERVAL) % 3
+  const s = TUNING.ENEMY_BULLET_SPEED
+  if (pattern === 0) {
+    // Aimed straight at the player.
+    const d = Math.hypot(ctx.playerPos.x - e.pos.x, ctx.playerPos.y - e.pos.y) || 1
+    ctx.fire(e.pos.x, e.pos.y, ((ctx.playerPos.x - e.pos.x) / d) * s, ((ctx.playerPos.y - e.pos.y) / d) * s, 0)
+  } else if (pattern === 1) {
+    // Gravity droppers: lobbed out slowly, then accelerate straight down.
+    for (const dx of [-160, -60, 60, 160]) {
+      ctx.fire(e.pos.x + dx, e.pos.y, dx * 0.6, 40, TUNING.BOSS_BULLET_GRAVITY)
+    }
+  } else {
+    // Downward fan (constant speed).
+    for (const ang of [70, 90, 110, 55, 125]) {
+      const r = Phaser.Math.DegToRad(ang)
+      ctx.fire(e.pos.x, e.pos.y, Math.cos(r) * s, Math.sin(r) * s, 0)
+    }
+  }
+}
+
+export const ENEMY_TYPES = { STATIC, FALLER, DRIFTER, WEAVER, SPLITTER, ORBITER, SHIELD, BOSS }
 
 // --------------------------------------------------------------------------
 // Spawning
@@ -145,19 +205,32 @@ export function spawnEnemy(scene: Phaser.Scene, list: Enemy[], type: EnemyType, 
 // Move enemies via their type pattern; sync graphics; fire at the player. Enemies
 // are CONFINED to the top zone (never cross the divider) and PERSIST until killed
 // — a faller drops to the divider and then sits there as a target.
+// Returns true if a DANGEROUS enemy (the boss during its dash) touched the
+// player this frame — a game over.
 export function updateEnemies(
   scene: Phaser.Scene,
   list: Enemy[],
   dt: number,
   playerPos: Phaser.Math.Vector2,
-  bullets: Body[],
-) {
+  playerRadius: number,
+  bullets: Bullet[],
+): boolean {
   const floorY = TUNING.ACTIVE_ZONE_Y * TUNING.ENEMY_FLOOR_FRAC // enemies stop here
+  const ctx: ActContext = {
+    scene,
+    playerPos,
+    fire: (x, y, vx, vy, accelY) => spawnBullet(scene, bullets, x, y, vx, vy, accelY),
+  }
   for (const e of list) {
     e.age += dt
-    e.type.move(e, dt)
-    // Clamp inside the top zone (top edge and the enemy floor threshold).
-    e.pos.y = Phaser.Math.Clamp(e.pos.y, e.radius, floorY - e.radius)
+
+    if (e.type.act) {
+      e.type.act(e, dt, ctx) // boss: custom movement + firing
+    } else {
+      e.type.move(e, dt)
+      // Non-boss enemies are clamped inside the top zone.
+      e.pos.y = Phaser.Math.Clamp(e.pos.y, e.radius, floorY - e.radius)
+    }
     e.gfx.setPosition(e.pos.x, e.pos.y)
 
     // Hit-flash: tint white briefly after taking a non-lethal hit.
@@ -166,38 +239,46 @@ export function updateEnemies(
       e.gfx.setFillStyle(e.flash > 0 ? TUNING.COLOR_ENEMY_FLASH : e.type.color)
     }
 
-    // Firing: shoot a bullet aimed at the player on the fire interval.
-    if (e.type.fireInterval) {
+    // Boss contact (only reaches the player during its dash) = game over.
+    if (e.type.boss && overlaps(e, playerPos, playerRadius)) return true
+
+    // Simple aimed firing for non-boss shooters.
+    if (e.type.fireInterval && !e.type.act) {
       e.fireTimer += dt
       if (e.fireTimer >= e.type.fireInterval) {
         e.fireTimer = 0
-        fireBullet(scene, bullets, e.pos, playerPos)
+        const d = Math.hypot(playerPos.x - e.pos.x, playerPos.y - e.pos.y) || 1
+        ctx.fire(
+          e.pos.x,
+          e.pos.y,
+          ((playerPos.x - e.pos.x) / d) * TUNING.ENEMY_BULLET_SPEED,
+          ((playerPos.y - e.pos.y) / d) * TUNING.ENEMY_BULLET_SPEED,
+          0,
+        )
       }
     }
   }
+  return false
 }
 
 // --------------------------------------------------------------------------
 // Enemy bullets
 // --------------------------------------------------------------------------
-function fireBullet(scene: Phaser.Scene, bullets: Body[], from: Phaser.Math.Vector2, target: Phaser.Math.Vector2) {
-  const dx = target.x - from.x
-  const dy = target.y - from.y
-  const d = Math.hypot(dx, dy) || 1
-  const vx = (dx / d) * TUNING.ENEMY_BULLET_SPEED
-  const vy = (dy / d) * TUNING.ENEMY_BULLET_SPEED
-  spawnBody(scene, bullets, from.x, from.y, vx, vy, TUNING.ENEMY_BULLET_RADIUS, TUNING.COLOR_ENEMY_BULLET, 0)
+function spawnBullet(scene: Phaser.Scene, bullets: Bullet[], x: number, y: number, vx: number, vy: number, accelY: number) {
+  const b = spawnBody(scene, [], x, y, vx, vy, TUNING.ENEMY_BULLET_RADIUS, TUNING.COLOR_ENEMY_BULLET, 0)
+  bullets.push({ ...b, accelY })
 }
 
-// Move enemy bullets straight; despawn off-screen. Returns true if any hit the
-// player. (Bullets DO despawn — only enemies persist.)
+// Move enemy bullets (with optional downward accel); despawn off-screen.
+// Returns true if any hit the player.
 export function updateEnemyBullets(
-  list: Body[],
+  list: Bullet[],
   dt: number,
   playerPos: Phaser.Math.Vector2,
   playerRadius: number,
 ): boolean {
   for (const b of list) {
+    b.vel.y += b.accelY * dt
     integrate(b, dt)
     if (overlaps(b, playerPos, playerRadius)) return true
     if (fullyOffScreen(b)) b.dead = true

@@ -1,5 +1,6 @@
 import Phaser from 'phaser'
 import { GameScene, DESIGN_WIDTH, DESIGN_HEIGHT } from './GameScene'
+import { runTutorialOnce } from './tutorial'
 
 // Kill browser touch gestures at the document level too. The CSS handles most
 // of it, but preventDefault on touchmove is the belt-and-suspenders that stops
@@ -18,3 +19,6 @@ new Phaser.Game({
   },
   scene: [GameScene],
 })
+
+// First-visit tutorial (once, guarded by a cookie).
+runTutorialOnce()

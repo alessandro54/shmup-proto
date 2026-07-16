@@ -1,6 +1,6 @@
 import Phaser from 'phaser'
 import { DESIGN_WIDTH, DESIGN_HEIGHT, TUNING } from './config'
-import type { Body, Enemy, Explosion, EnemyType, Projectile, Star } from './types'
+import type { Body, Bullet, Enemy, Explosion, EnemyType, Projectile, Star } from './types'
 import { reap } from './physics'
 import { launchShot, updateProjectiles, detonate } from './projectile'
 import { SHOT_NORMAL, SHOT_HOMING, SHOT_SPLIT, type ShotType } from './weapon'
@@ -21,7 +21,7 @@ export class GameScene extends Phaser.Scene {
   private projectiles: Projectile[] = []
   private shards: Body[] = []
   private enemies: Enemy[] = []
-  private enemyBullets: Body[] = []
+  private enemyBullets: Bullet[] = []
   private explosions: Explosion[] = []
   private stars: Star[] = []
 
@@ -31,6 +31,8 @@ export class GameScene extends Phaser.Scene {
   private stageComplete = false
   private waveStars = 0 // stars collected toward the current wave's quota
   private waveTarget = 0 // stars needed to advance (loops the wave if unmet)
+  private transitionTimer = 0 // >0 = between-wave pause in progress
+  private transitionText?: Phaser.GameObjects.Text
   private starBar!: Phaser.GameObjects.Rectangle
 
   // Input state. Multi-touch: one finger moves the player, whichever finger
@@ -104,6 +106,9 @@ export class GameScene extends Phaser.Scene {
     this.waveIndex = -1
     this.stageComplete = false
     this.waveStars = 0
+    this.transitionTimer = 0
+    this.transitionText?.destroy()
+    this.transitionText = undefined
     this.energy = TUNING.HOMING_ENERGY_MAX
     this.gameOver = false
     this.downInfo.clear()
@@ -185,6 +190,27 @@ export class GameScene extends Phaser.Scene {
       return
     }
     this.spawnCurrentWave()
+  }
+
+  // Wave cleared with quota met: sweep all in-flight debris, flash a banner,
+  // and start the between-wave pause. The next wave spawns when it elapses.
+  private startWaveTransition() {
+    for (const list of [this.projectiles, this.shards, this.enemyBullets]) {
+      list.forEach((o) => o.gfx.destroy())
+    }
+    this.projectiles = []
+    this.shards = []
+    this.enemyBullets = []
+    this.clearEnemies() // any leftover shields
+    this.transitionText = this.add
+      .text(DESIGN_WIDTH / 2, DESIGN_HEIGHT / 2, 'WAVE CLEARED', {
+        fontFamily: 'monospace',
+        fontSize: '44px',
+        color: '#ffffff',
+      })
+      .setOrigin(0.5)
+      .setDepth(200)
+    this.transitionTimer = TUNING.WAVE_TRANSITION_S
   }
 
   // Re-run the current wave (enemies cleared but the star quota wasn't met).
@@ -311,6 +337,18 @@ export class GameScene extends Phaser.Scene {
     if (this.gameOver) return
     const dt = delta / 1000
 
+    // Between-wave transition: world is paused, debris already cleared. Count
+    // down, then spawn the next wave.
+    if (this.transitionTimer > 0) {
+      this.transitionTimer -= dt
+      if (this.transitionTimer <= 0) {
+        this.transitionText?.destroy()
+        this.transitionText = undefined
+        this.advanceWave()
+      }
+      return
+    }
+
     // Recharge homing energy over time.
     if (this.energy < TUNING.HOMING_ENERGY_MAX) {
       this.energy = Math.min(TUNING.HOMING_ENERGY_MAX, this.energy + dt / TUNING.HOMING_RECHARGE_S)
@@ -346,8 +384,10 @@ export class GameScene extends Phaser.Scene {
     this.waveStars += updateStars(this.stars, dt, this.playerPos, TUNING.PLAYER_RADIUS)
     this.starBar.setScale(1, this.waveTarget > 0 ? Math.min(1, this.waveStars / this.waveTarget) : 1)
 
-    // Enemies stay in the top zone, but they FIRE at the player.
-    updateEnemies(this, this.enemies, dt, this.playerPos, this.enemyBullets)
+    // Enemies fire at the player; the boss also dashes — contact = game over.
+    if (updateEnemies(this, this.enemies, dt, this.playerPos, TUNING.PLAYER_RADIUS, this.enemyBullets)) {
+      return this.triggerGameOver()
+    }
 
     // Enemy bullets + your own shards can both kill the player.
     if (updateEnemyBullets(this.enemyBullets, dt, this.playerPos, TUNING.PLAYER_RADIUS)) {
@@ -368,7 +408,7 @@ export class GameScene extends Phaser.Scene {
     // (caught or lost), either advance (quota met) or LOOP the wave (quota unmet).
     const killableLeft = this.enemies.some((e) => !e.type.invincible)
     if (!this.stageComplete && !killableLeft && this.stars.length === 0) {
-      if (this.waveStars >= this.waveTarget) this.advanceWave()
+      if (this.waveStars >= this.waveTarget) this.startWaveTransition()
       else this.loopWave()
     }
 
