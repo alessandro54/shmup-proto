@@ -6,9 +6,9 @@ import { spawnBody, integrate, fullyOffScreen, overlaps } from './physics'
 // Fling one or more concentric rings of shards outward from (x,y). Ring 0 is
 // fastest; each inner ring is slower, so the rings separate over time. Shards
 // fly straight (no gravity, no fade) until they leave the screen.
-export function spawnBurst(scene: Phaser.Scene, list: Body[], x: number, y: number) {
+export function spawnBurst(scene: Phaser.Scene, list: Body[], x: number, y: number, rings: number) {
   let ringSpeed = TUNING.SHARD_SPEED
-  for (let r = 0; r < TUNING.SHARD_RINGS; r++) {
+  for (let r = 0; r < rings; r++) {
     // Stagger each ring's angles by a fraction of a step so rings don't
     // perfectly overlap — spreads the gaps for better coverage.
     const angleOffset = (r / TUNING.SHARD_RINGS) * ((Math.PI * 2) / TUNING.SHARD_COUNT)

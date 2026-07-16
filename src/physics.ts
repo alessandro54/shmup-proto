@@ -13,8 +13,8 @@ export function spawnBody(
   radius: number,
   color: number,
   life: number,
-) {
-  list.push({
+): Body {
+  const body: Body = {
     pos: new Phaser.Math.Vector2(x, y),
     vel: new Phaser.Math.Vector2(vx, vy),
     radius,
@@ -22,7 +22,9 @@ export function spawnBody(
     dead: false,
     age: 0,
     life,
-  })
+  }
+  list.push(body)
+  return body
 }
 
 // Euler integration: position += velocity * dt, then sync the graphic.
